@@ -1,0 +1,92 @@
+hello world how is it going?
+
+package main
+
+import (
+	"fmt"
+	"time"
+
+	"github.com/beego/beego/v2/client/httplib"
+)
+
+func main() {
+	var obj interface{}
+
+	// Start measuring time
+	startTime := time.Now()
+
+	req := httplib.Post("http://localhost:8080/group1/upload")
+	req.PostFile("file", "oppenhaimer.mkv")
+	req.Param("output", "json")
+	req.Param("scene", "")
+	req.Param("filename", "oppenhaimer")
+	req.Param("path", "")
+	err := req.ToJSON(&obj)
+	if err != nil {
+		fmt.Println("Error during request:", err)
+		return
+	}
+
+	// Calculate the elapsed time
+	elapsedTime := time.Since(startTime)
+
+	// Convert elapsed time to minutes and seconds
+	minutes := int(elapsedTime.Minutes())
+	seconds := int(elapsedTime.Seconds()) % 60
+
+	fmt.Println("Upload completed.")
+	fmt.Printf("Time taken for upload: %d minutes and %d seconds\n", minutes, seconds)
+	fmt.Printf("Response: %+v\n", obj)
+}
+
+
+
+package main
+
+import (
+	"fmt"
+	"log"
+	"os"
+
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+)
+
+func main() {
+	botToken := "7243299609:AAHutkDS6NnffwCFIQiDrBdfUS9uXCXTOLw"
+	// channelUsername := "@omnicron_storage"
+	chatID := -1002212543227
+	filePath := "text.txt"
+	file, err := os.Open(filePath)
+	if err != nil{
+		log.Printf("error opening file %v",err)
+		return
+	}
+	defer file.Close()
+	bot, err := tgbotapi.NewBotAPI(botToken)
+	if err != nil {
+		log.Print(err)
+		return
+
+	}
+	
+// sending document message
+   documentConfig := tgbotapi.NewDocument(int64(chatID), tgbotapi.FileReader{
+	 Name: filePath,
+	 Reader: file,
+   })
+   documentMsg, err := bot.Send(documentConfig)
+	if err != nil {
+		log.Printf("error sending doc message %v", err)
+		return
+	}
+	fileID := documentMsg.Document.FileID
+	fileURL, err := bot.GetFileDirectURL(fileID)
+	if err != nil{
+		log.Printf("error generating file url %v", err)
+		return
+	}
+	fmt.Printf("this is my file url %v \n", fileURL )
+	fmt.Println(documentMsg.Chat.ID)
+	fmt.Println("doc message sent")
+   
+}
