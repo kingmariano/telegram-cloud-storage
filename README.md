@@ -73,6 +73,7 @@ To ensure the application is running correctly, access the following endpoint:
 
 ```sh
 http://localhost:8080/upload
+```
 ## API Endpoints
 
 ### Upload File
@@ -98,7 +99,7 @@ http://localhost:8080/upload
 
 ```sh
 curl -X POST -F "file=@/path/to/your/file" http://localhost:8080/upload
-
+```
 ## Safe Usage Policy
 
 When using Telegram Cloud, ensure you follow these safety guidelines:
