@@ -90,3 +90,241 @@ func main() {
 	fmt.Println("doc message sent")
    
 }
+
+
+package main
+
+import (
+	"fmt"
+	"io"
+	"net/http"
+
+	"github.com/NicoNex/echotron/v3"
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	// "time"
+)
+
+const MaxUploadSize = 50 << 20 // 50 MB
+
+type ResponseParam struct {
+	Url string `json:"response"`
+}
+
+func (botcfg *BotApiConfig) HandleTelegramUpload(w http.ResponseWriter, r *http.Request) {
+	err := r.ParseMultipartForm(MaxUploadSize)
+	botcfg.Bot.Debug =  true
+	if err != nil {
+		RespondWithError(w, http.StatusRequestEntityTooLarge, err.Error())
+		return
+	}
+	file, fileHeader, err := r.FormFile("file")
+	if err != nil {
+		RespondWithError(w, http.StatusBadRequest, fmt.Sprintf("error with file %v", err))
+		return
+	}
+	defer file.Close()
+	if fileHeader.Size > MaxUploadSize {
+		RespondWithError(w, http.StatusBadRequest, fmt.Sprintf("File %s is too big. Max size: %d bytes", fileHeader.Filename, MaxUploadSize))
+		return
+	}
+	//send message using uploader bot
+	fileBytes, err  := io.ReadAll(file)
+	if err != nil{
+		RespondWithError(w, http.StatusInternalServerError, fmt.Sprintf("Error converting file to bytes %v", err))
+		return
+	}
+
+	fileUpload := echotron.NewInputFileBytes(fileHeader.Filename, fileBytes)
+	_, err = botcfg.BotUploader.SendMessage("hello from bot uploader", botcfg.ChannelID, &echotron.MessageOptions{})
+	if err != nil{
+		RespondWithError(w, http.StatusInternalServerError, fmt.Sprintf("error sending message with bot uploader %v", err))
+		return
+	}
+	documentConfig := tgbotapi.NewDocument(botcfg.ChannelID, tgbotapi.FileReader{
+		Name:   fileHeader.Filename,
+		Reader: file,
+	})
+
+	documentMsg, err := botcfg.Bot.Send(documentConfig)
+	if err != nil {
+		RespondWithError(w, http.StatusInternalServerError, fmt.Sprintf("error sending doc file %v", err))
+		return
+	}
+
+	var fileID string
+	if documentMsg.Document != nil {
+		fileID = documentMsg.Document.FileID
+	} else if documentMsg.Video != nil {
+		fileID = documentMsg.Video.FileID
+	} else if documentMsg.Audio != nil {
+		fileID = documentMsg.Audio.FileID
+	} else if len(documentMsg.Photo) > 0 {
+		fileID = documentMsg.Photo[len(documentMsg.Photo)-1].FileID
+	} else if documentMsg.Voice != nil {
+		fileID = documentMsg.Voice.FileID
+	} else if documentMsg.VideoNote != nil {
+		fileID = documentMsg.VideoNote.FileID
+	} else if documentMsg.Sticker != nil {
+		fileID = documentMsg.Sticker.FileID
+	} else if documentMsg.Animation != nil {
+		fileID = documentMsg.Animation.FileID
+	} else {
+		RespondWithError(w, http.StatusInternalServerError, "Unknown file type")
+		return
+	}
+
+    
+	fileURL, err := botcfg.Bot.GetFileDirectURL(fileID)
+	if err != nil {
+		RespondWithError(w, http.StatusInternalServerError, fmt.Sprintf("error getting file URL %v", err))
+		return
+	}
+
+	res := ResponseParam{
+		Url: fileURL,
+	}
+	RespondWithJSON(w, http.StatusOK, res)
+}
+
+
+
+package main
+
+import (
+	"fmt"
+	"github.com/NicoNex/echotron/v3"
+	"io"
+	"net/http"
+	"errors"
+)
+
+const MaxUploadSize = 50 << 20 // 50 MB
+const ChunkSize = 40 << 20     // 40 MB
+
+type ResponseParam struct {
+	Urls []string `json:"response"`
+}
+
+func (botcfg *BotApiConfig) HandleTelegramUpload(w http.ResponseWriter, r *http.Request) {
+	err := r.ParseMultipartForm(MaxUploadSize)
+	botcfg.Bot.Debug = true
+	if err != nil {
+		RespondWithError(w, http.StatusRequestEntityTooLarge, err.Error())
+		return
+	}
+	file, fileHeader, err := r.FormFile("file")
+	if err != nil {
+		RespondWithError(w, http.StatusBadRequest, fmt.Sprintf("error with file %v", err))
+		return
+	}
+	defer file.Close()
+	if fileHeader.Size > MaxUploadSize {
+		fmt.Println("uploading file greater than 50MB started")
+		urls, err := botcfg.splitAndUpload(file, fileHeader.Filename)
+		if err != nil {
+			RespondWithError(w, http.StatusInternalServerError, fmt.Sprintf("Error splitting and uploading file %v", err))
+			return
+		}
+		res := ResponseParam{Urls: urls}
+		RespondWithJSON(w, http.StatusOK, res)
+		return
+	}
+
+	fileBytes, err := io.ReadAll(file)
+	if err != nil {
+		RespondWithError(w, http.StatusInternalServerError, fmt.Sprintf("Error converting file to bytes %v", err))
+		return
+	}
+
+	fileUpload := echotron.NewInputFileBytes(fileHeader.Filename, fileBytes)
+
+	documentMsg, err := botcfg.BotUploader.SendDocument(fileUpload, botcfg.ChannelID, &echotron.DocumentOptions{})
+	if err != nil {
+		RespondWithError(w, http.StatusInternalServerError, fmt.Sprintf("error sending document with bot uploader %v", err))
+		return
+	}
+
+	fileID, err := botcfg.GetFileID(documentMsg)
+	if err != nil {
+		RespondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	fileURL, err := botcfg.Bot.GetFileDirectURL(fileID)
+	if err != nil {
+		RespondWithError(w, http.StatusInternalServerError, fmt.Sprintf("error getting file URL %v", err))
+		return
+	}
+
+	res := ResponseParam{
+		Urls: []string{fileURL},
+	}
+	RespondWithJSON(w, http.StatusOK, res)
+}
+
+func (botcfg *BotApiConfig) splitAndUpload(file io.Reader, filename string) ([]string, error) {
+	var urls []string
+	buf := make([]byte, ChunkSize)
+	part := 1
+
+	for {
+		n, err := file.Read(buf)
+		if err != nil && err != io.EOF {
+			return nil, err
+		}
+		if n == 0 {
+			break
+		}
+
+		chunkName := fmt.Sprintf("%s.part%d", filename, part)
+		fileUpload := echotron.NewInputFileBytes(chunkName, buf[:n])
+
+		documentMsg, err := botcfg.BotUploader.SendDocument(fileUpload, botcfg.ChannelID, &echotron.DocumentOptions{})
+		if err != nil {
+			return nil, err
+		}
+
+		fileID, err := botcfg.GetFileID(documentMsg)
+		if err != nil {
+			return nil, err
+		}
+
+		fileURL, err := botcfg.Bot.GetFileDirectURL(fileID)
+		if err != nil {
+			return nil, err
+		}
+
+		urls = append(urls, fileURL)
+		part++
+	}
+
+	return urls, nil
+}
+
+func (botcfg *BotApiConfig) GetFileID(documentMsg echotron.APIResponseMessage) (string, error) {
+	if documentMsg.Result.Document != nil {
+		return documentMsg.Result.Document.FileID, nil
+	} else if documentMsg.Result.Video != nil {
+		return documentMsg.Result.Video.FileID, nil
+	} else if documentMsg.Result.Audio != nil {
+		return documentMsg.Result.Audio.FileID, nil
+	} else if len(documentMsg.Result.Photo) > 0 {
+		return documentMsg.Result.Photo[len(documentMsg.Result.Photo)-1].FileID, nil
+	} else if documentMsg.Result.Voice != nil {
+		return documentMsg.Result.Voice.FileID, nil
+	} else if documentMsg.Result.VideoNote != nil {
+		return documentMsg.Result.VideoNote.FileID, nil
+	} else if documentMsg.Result.Sticker != nil {
+		return documentMsg.Result.Sticker.FileID, nil
+	} else if documentMsg.Result.Animation != nil {
+		return documentMsg.Result.Animation.FileID, nil
+	} else {
+		return "", errors.New("unknown file type")
+	}
+}
+
+
+
+
+
+
