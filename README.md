@@ -25,11 +25,13 @@ To install Telegram Cloud, follow these steps:
 
     - **Bot Token**: Obtain a bot token from [BotFather](https://t.me/botfather). Start a conversation with BotFather, use the `/newbot` command to create a new bot, and get the token.
 
-    ![BotFather Token](images/botfather.png)
+    ![BotFather Token](docs/botfather.png)
 
     - **Channel Username**: Obtain your public or private channel username. To find your channel username, open your Telegram app, go to the channel, and note the username.
 
-    ![Channel Username](images/channel-username.png)
+    ![Channel Username](docs/channel-username.png)
+
+    *Note*~add Bot to the channel and grant it all permissions~
 
     - **Environment Variables**: Create a `.env` file in the project root directory and add the following:
 
