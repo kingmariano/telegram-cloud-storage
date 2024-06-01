@@ -31,7 +31,7 @@ To install Telegram Cloud, follow these steps:
 
     ![Channel Username](docs/channel-username.png)
 
-    *Note*~add Bot to the channel and grant it all permissions~
+    **Note**:  Add Bot to the channel and grant it all permissions
 
     - **Environment Variables**: Create a `.env` file in the project root directory and add the following:
 
