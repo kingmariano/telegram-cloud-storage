@@ -62,6 +62,7 @@ Example `.env` file:
 ```env
 TELEGRAM_BOT_TOKEN=123456789:ABCdefGHIjklMNOpqrSTUvwxYZ
 TELEGRAM_CHANNEL_USERNAME=@my_channel
+```
 
 ## Usage
 
